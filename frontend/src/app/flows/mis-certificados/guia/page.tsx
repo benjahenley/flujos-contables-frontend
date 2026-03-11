@@ -1,4 +1,4 @@
-import GuiaDeConfiguracion from "@/components/pages/flows/mis-cuits-y-pdvs/GuiaDeConfiguracion";
+import GuiaDeConfiguracion from "@/components/pages/flows/mis-certificados/GuiaDeConfiguracion";
 
 // flows/mis-cuits-pdvs/configurar
 export default function () {

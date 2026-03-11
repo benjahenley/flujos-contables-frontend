@@ -1,77 +1,65 @@
-export interface AfipConfigPayload {
+import { supabase } from "@/lib/supabase";
+
+export interface GenerateCsrPayload {
   cuit: string;
-  certificate: File;
-  privateKey: File;
+  companyName: string;
+  certName: string;
+  environment: "DEV" | "PROD";
 }
 
-export interface InvoiceData {
-  total: number;
-  // Agregar otros campos necesarios para la factura
+export interface GenerateCsrResponse {
+  csrText: string;
+  certRecordId: string;
 }
 
 class AfipApi {
-  async configureAfip(data: AfipConfigPayload) {
+  private static async getAuthHeaders(): Promise<Record<string, string>> {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return {
+      Authorization: `Bearer ${session?.access_token || ""}`,
+      "Content-Type": "application/json",
+    };
+  }
+
+  async generateCsr(payload: GenerateCsrPayload): Promise<GenerateCsrResponse> {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/certificates/generate-csr`,
+      {
+        method: "POST",
+        headers: await AfipApi.getAuthHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.message || "Error al generar el CSR");
+    }
+    return res.json();
+  }
+
+  async uploadCert(certRecordId: string, file: File): Promise<{ success: boolean }> {
+    const { data: { session } } = await supabase.auth.getSession();
     const formData = new FormData();
-    formData.append("cuit", data.cuit);
-    formData.append("certificate", data.certificate);
-    formData.append("privateKey", data.privateKey);
+    formData.append("certificate", file);
 
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/afip/config`,
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/certificates/${certRecordId}/upload-cert`,
       {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token || ""}`,
+          // NOTE: do NOT set Content-Type here — browser sets it with boundary
+        },
         body: formData,
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
       }
     );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Error al configurar AFIP");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.message || "Error al subir el certificado");
     }
-
-    return response.json();
-  }
-
-  async generateInvoice(data: InvoiceData) {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/afip/invoice`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify(data),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Error al generar factura");
-    }
-
-    return response.json();
-  }
-
-  async getInvoiceStatus(invoiceId: string) {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/afip/invoice/${invoiceId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Error al obtener estado de factura");
-    }
-
-    return response.json();
+    return res.json();
   }
 }
 

@@ -1,14 +1,17 @@
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import type {
+  AuthUser,
+  SubscriptionInfo,
+  UsageStats,
+  UsageCheck,
+  SubscriptionHistoryEntry,
+  UpdateSubscriptionDto,
+  SwitchEnvironmentDto,
+  Environment,
+} from "@/types/auth";
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  name?: string;
-  isVerified: boolean;
-  isVerifiedCustomer: boolean;
-  isSuperAdmin: boolean;
-}
+export type { AuthUser } from "@/types/auth";
 
 export interface SignUpData {
   email: string;
@@ -18,41 +21,69 @@ export interface SignUpData {
 
 class AuthService {
   // Sign up with Supabase Auth
-  async signUp(
-    data: SignUpData
-  ): Promise<{ message: string; user: Partial<AuthUser> }> {
-    try {
-      const { data: authData, error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            name: data.name,
-            isVerifiedCustomer: false,
-          },
-        },
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      return {
-        message:
-          "Registration successful! Please check your email to verify your account.",
-        user: {
-          id: authData.user?.id,
-          email: authData.user?.email!,
+  async signUp(data: SignUpData): Promise<{ message: string; user: AuthUser }> {
+    // 1. Sign up in Supabase
+    const { data: authData, error } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+      options: {
+        data: {
           name: data.name,
-          isVerified: false,
           isVerifiedCustomer: false,
         },
-      };
-    } catch (error) {
-      throw new Error(
-        error instanceof Error ? error.message : "Sign up failed"
-      );
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message);
     }
+
+    if (!authData || !authData.user) {
+      throw new Error("No se pudo crear el usuario en Supabase");
+    }
+
+    const authUser = authData.user;
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+    if (!apiUrl) {
+      throw new Error("API URL not configured (NEXT_PUBLIC_API_URL)");
+    }
+
+    const response = await fetch(`${apiUrl}/user/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        authUserId: authUser.id,
+        name: data.name,
+        email: data.email,
+      }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = "No se pudo crear el usuario en la base de datos";
+      try {
+        const err = await response.json();
+        if (err?.message) errorMessage = err.message;
+      } catch {}
+      throw new Error(errorMessage);
+    }
+
+    // 3. Build the AuthUser object for your frontend
+    const user: AuthUser = {
+      id: authUser.id,
+      email: authUser.email!,
+      name: data.name ?? authUser.user_metadata?.name,
+      isVerified: !!authUser.email_confirmed_at,
+      isVerifiedCustomer: authUser.user_metadata?.isVerifiedCustomer ?? false,
+      isSuperAdmin: authUser.app_metadata?.is_super_admin ?? false,
+    };
+
+    return {
+      message:
+        "Registration successful! Please check your email to verify your account.",
+      user,
+    };
   }
 
   // Sign in with Supabase Auth
@@ -138,10 +169,8 @@ class AuthService {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      console.log("🔍 CheckAuth - Session:", !!session);
 
       if (!session) {
-        console.log("❌ CheckAuth - No session found");
         return false;
       }
 
@@ -149,21 +178,75 @@ class AuthService {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      console.log(
-        "🔍 CheckAuth - User:",
-        !!user,
-        "Email confirmed:",
-        !!user?.email_confirmed_at
-      );
-
       const isAuthenticated = !!(user && user.email_confirmed_at);
-      console.log("✅ CheckAuth - Final result:", isAuthenticated);
 
       return isAuthenticated;
     } catch (error) {
-      console.error("❌ Auth check error:", error);
       return false;
     }
+  }
+
+  // ── 3-step sign-up flow ──
+
+  // Step 1: send OTP to email (creates user if not exists)
+  async sendOtp(email: string): Promise<void> {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true },
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  // Step 2: verify 6-digit OTP code
+  async verifyEmailOtp(email: string, token: string): Promise<void> {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: "email",
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  // Step 3: set name + password, then register in backend DB
+  async completeSignUp(name: string, password: string, email: string): Promise<{ message: string; user: AuthUser }> {
+    // Set password and name on the verified user
+    const { data: updateData, error: updateError } = await supabase.auth.updateUser({
+      password,
+      data: { name, isVerifiedCustomer: false },
+    });
+    if (updateError) throw new Error(updateError.message);
+
+    const authUser = updateData.user;
+    if (!authUser) throw new Error("No se pudo actualizar el usuario");
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!apiUrl) throw new Error("API URL not configured (NEXT_PUBLIC_API_URL)");
+
+    const response = await fetch(`${apiUrl}/user/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ authUserId: authUser.id, name, email }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = "No se pudo crear el usuario en la base de datos";
+      try {
+        const err = await response.json();
+        if (err?.message) errorMessage = err.message;
+      } catch {}
+      throw new Error(errorMessage);
+    }
+
+    const user: AuthUser = {
+      id: authUser.id,
+      email: authUser.email!,
+      name,
+      isVerified: !!authUser.email_confirmed_at,
+      isVerifiedCustomer: false,
+      isSuperAdmin: false,
+    };
+
+    return { message: "Cuenta creada exitosamente.", user };
   }
 
   // Resend confirmation email
@@ -257,6 +340,250 @@ class AuthService {
       console.error("❌ Full upgrade error:", error);
       throw new Error(
         error instanceof Error ? error.message : "Upgrade failed"
+      );
+    }
+  }
+
+  // ==================== SUBSCRIPTION MANAGEMENT ====================
+
+  /**
+   * Get subscription information for current user
+   */
+  async getSubscriptionInfo(): Promise<SubscriptionInfo> {
+    try {
+      const token = await this.getToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/subscription/info`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch subscription info");
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch subscription info"
+      );
+    }
+  }
+
+  /**
+   * Get subscription history
+   */
+  async getSubscriptionHistory(): Promise<SubscriptionHistoryEntry[]> {
+    try {
+      const token = await this.getToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/subscription/history`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch subscription history");
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch subscription history"
+      );
+    }
+  }
+
+  /**
+   * Update subscription (Admin only)
+   */
+  async updateSubscription(
+    userId: string,
+    updateDto: UpdateSubscriptionDto
+  ): Promise<{ message: string }> {
+    try {
+      const token = await this.getToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/subscription/update/${userId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updateDto),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to update subscription");
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : "Failed to update subscription"
+      );
+    }
+  }
+
+  // ==================== ENVIRONMENT MANAGEMENT ====================
+
+  /**
+   * Switch between DEV and PROD environments
+   */
+  async switchEnvironment(
+    environment: Environment
+  ): Promise<{ message: string; environment: Environment }> {
+    try {
+      const token = await this.getToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/environment/switch`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ environment }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to switch environment");
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to switch environment"
+      );
+    }
+  }
+
+  /**
+   * Get current active environment
+   */
+  async getCurrentEnvironment(): Promise<{ environment: Environment }> {
+    try {
+      const token = await this.getToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/environment/current`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch current environment");
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch current environment"
+      );
+    }
+  }
+
+  // ==================== USAGE TRACKING ====================
+
+  /**
+   * Get usage statistics for current month
+   */
+  async getUsageStats(): Promise<UsageStats> {
+    try {
+      const token = await this.getToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/usage/stats`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch usage stats");
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to fetch usage stats"
+      );
+    }
+  }
+
+  /**
+   * Check if user can generate invoices in specific environment
+   */
+  async checkUsage(environment: Environment): Promise<UsageCheck> {
+    try {
+      const token = await this.getToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/usage/check/${environment}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to check usage");
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to check usage"
       );
     }
   }

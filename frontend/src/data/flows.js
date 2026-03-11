@@ -1,3 +1,4 @@
+import { AiFillSafetyCertificate } from "react-icons/ai";
 import {
   FaCog,
   FaLink,
@@ -11,14 +12,24 @@ import {
 
 export const dashboardCards = [
   {
-    title: "Configura tu",
-    subtitle: "CUIT y PDV",
+    title: "Creá tu propio",
+    subtitle: "CERTIFICADO DE DESARROLLO",
     description:
-      "Gestiona tus CUITs y configura puntos de venta (PDV) para facturación electrónica.",
-    icon: <FaCog className="text-2xl" />,
-    buttonText: "GESTIONAR",
+      "Si sos nuevo empezá acá, exclusivo para ambientes de testing.",
+    icon: <AiFillSafetyCertificate className="text-2xl" />,
+    buttonText: "GENERAR",
     premium: false,
-    href: "/flows/mis-cuits-pdvs",
+    href: "/flows/mis-certificados",
+  },
+  {
+    title: "Creá tu propio",
+    subtitle: "CERTIFICADO DE PRODUCCION",
+    description:
+      "Si sos nuevo empezá acá, exclusivo para ambientes de desarrollo e impacto real.",
+    icon: <AiFillSafetyCertificate className="text-2xl" />,
+    buttonText: "GENERAR",
+    premium: false,
+    href: "/flows/mis-certificados",
   },
   {
     title: "Conectá",

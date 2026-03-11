@@ -4,12 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authService } from "@/services/auth";
 import Image from "next/image";
+import Link from "next/link";
 
 export default function SignInPage() {
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState({ email: "", password: "" });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -18,151 +16,223 @@ export default function SignInPage() {
     e.preventDefault();
     setIsLoading(true);
     setError("");
-
     try {
-      const result = await authService.signIn(
-        formData.email,
-        formData.password
-      );
-      console.log("Sign in successful:", result);
-
-      // Redirect to dashboard
+      await authService.signIn(formData.email, formData.password);
       router.push("/dashboard");
-    } catch (error) {
-      console.error("Sign in error:", error);
-      setError(
-        error instanceof Error ? error.message : "Error al iniciar sesión"
-      );
+    } catch (err) {
+      console.error("Sign in error:", err);
+      setError(err instanceof Error ? err.message : "Error al iniciar sesión");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleResendConfirmation = async () => {
-    if (!formData.email) {
-      setError("Por favor ingresa tu email");
-      return;
-    }
-
+    if (!formData.email) { setError("Por favor ingresá tu email"); return; }
     try {
       setIsLoading(true);
       const result = await authService.resendConfirmation(formData.email);
-      setError(""); // Clear error
+      setError("");
       alert(result.message);
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Error al reenviar confirmación"
-      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al reenviar confirmación");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 h-fit bg-gray-50 p-10 rounded-3xl">
-        <div className="flex flex-col items-center justify-center">
-          <Image
-            src="/logo-celeste.png"
-            alt="Logo"
-            width={50}
-            height={50}
-            className="mb-4"
-          />
-          <h2 className=" text-center text-3xl font-extrabold text-gray-900">
-            Iniciar Sesión
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Accede a tu cuenta de Flujos Contables
-          </p>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-              <p>{error}</p>
-              {error.includes("verify your email") && (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,700;1,9..144,400&family=DM+Sans:wght@400;500;600&display=swap');
+        .auth-font-display { font-family: 'Fraunces', serif; }
+        .auth-font-body    { font-family: 'DM Sans', sans-serif; }
+
+        .auth-bg {
+          background-color: #080f16;
+          background-image:
+            radial-gradient(ellipse at 20% 60%, rgba(39,160,201,0.20) 0%, transparent 55%),
+            radial-gradient(ellipse at 80% 15%, rgba(16,185,129,0.10) 0%, transparent 50%);
+        }
+
+        .auth-grid {
+          background-image:
+            linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+          background-size: 64px 64px;
+        }
+
+        @keyframes authFadeUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .auth-card {
+          animation: authFadeUp 0.55s ease both;
+        }
+
+        .auth-input {
+          display: block;
+          width: 100%;
+          border-radius: 10px;
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          padding: 10px 14px;
+          font-size: 0.875rem;
+          color: #0f172a;
+          transition: all 0.15s ease;
+          outline: none;
+          font-family: 'DM Sans', sans-serif;
+        }
+        .auth-input::placeholder { color: #94a3b8; }
+        .auth-input:focus {
+          background: #fff;
+          border-color: #27a0c9;
+          box-shadow: 0 0 0 3px rgba(39,160,201,0.15);
+        }
+
+        .auth-btn-primary {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 11px 20px;
+          border-radius: 10px;
+          background: #27a0c9;
+          color: #fff;
+          font-size: 0.9rem;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-family: 'DM Sans', sans-serif;
+        }
+        .auth-btn-primary:hover:not(:disabled) {
+          background: #1e7a9c;
+          transform: translateY(-1px);
+          box-shadow: 0 6px 20px rgba(39,160,201,0.35);
+        }
+        .auth-btn-primary:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+      `}</style>
+
+      <div className="auth-bg auth-font-body min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden">
+        <div className="auth-grid absolute inset-0 pointer-events-none" />
+
+        <div className="auth-card relative z-10 w-full max-w-md">
+          {/* Card */}
+          <div className="bg-white rounded-2xl shadow-2xl px-8 py-10 sm:px-10 sm:py-12"
+            style={{ boxShadow: "0 32px 80px rgba(0,0,0,0.4)" }}>
+
+            {/* Header */}
+            <div className="flex flex-col items-center text-center mb-8">
+              <Link href="/">
+                <Image
+                  src="/logo-celeste.png"
+                  alt="Flujos Contables"
+                  width={52}
+                  height={52}
+                  className="mb-5 drop-shadow-md"
+                />
+              </Link>
+              <h1 className="auth-font-display text-3xl font-bold text-gray-900 mb-2">
+                Bienvenido de vuelta
+              </h1>
+              <p className="text-sm" style={{ color: "#6b7280" }}>
+                Accedé a tu cuenta de{" "}
+                <span style={{ color: "#27a0c9" }} className="font-medium">Flujos Contables</span>
+              </p>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div className="mb-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <p>{error}</p>
+                {error.includes("verify your email") && (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    disabled={isLoading}
+                    className="mt-2 text-xs font-semibold underline underline-offset-4 hover:no-underline disabled:opacity-50">
+                    Reenviar email de confirmación
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="space-y-1.5">
+                <label htmlFor="email" className="block text-sm font-semibold" style={{ color: "#374151" }}>
+                  Email
+                </label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="tu@email.com"
+                  className="auth-input"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="password" className="block text-sm font-semibold" style={{ color: "#374151" }}>
+                  Contraseña
+                </label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  placeholder="••••••••"
+                  className="auth-input"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button type="submit" disabled={isLoading} className="auth-btn-primary">
+                  {isLoading ? "Iniciando sesión..." : "Iniciar sesión"}
+                </button>
+              </div>
+            </form>
+
+            {/* Footer */}
+            <div className="mt-6 text-center">
+              <p className="text-sm" style={{ color: "#6b7280" }}>
+                ¿No tenés cuenta?{" "}
                 <button
                   type="button"
-                  onClick={handleResendConfirmation}
-                  className="mt-2 text-sm underline hover:no-underline"
-                  disabled={isLoading}>
-                  Reenviar email de confirmación
+                  onClick={() => router.push("/auth/sign-up")}
+                  className="font-semibold underline underline-offset-4 hover:no-underline"
+                  style={{ color: "#27a0c9" }}>
+                  Registrate acá
                 </button>
-              )}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-700">
-                Email
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary"
-                placeholder="tu@email.com"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700">
-                Contraseña
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary"
-                placeholder="••••••••"
-              />
+              </p>
             </div>
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed">
-              {isLoading ? "Iniciando sesión..." : "Iniciar Sesión"}
-            </button>
+          {/* Back link */}
+          <div className="mt-5 text-center">
+            <Link href="/" className="text-sm hover:underline transition-colors"
+              style={{ color: "rgba(255,255,255,0.4)" }}>
+              ← Volver al inicio
+            </Link>
           </div>
-
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              ¿No tienes cuenta?{" "}
-              <button
-                type="button"
-                onClick={() => router.push("/auth/sign-up")}
-                className="font-medium text-primary hover:text-primary-dark">
-                Regístrate aquí
-              </button>
-            </p>
-          </div>
-        </form>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
